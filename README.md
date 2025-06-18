@@ -29,9 +29,9 @@ An intelligent multi-label classifier powered by Retrieval-Augmented Generation 
 ```
 RAG-Lead-Classifier/
 │
-├── .env # 存放 API 金鑰 (需手動創建)
+├── .env # 存放 API 金鑰 (需親自創建)
 ├── config.ini # 專案配置 (模型、路徑、參數等)
-├── retrieval_corpus2.json # 檢索語料庫 (基於歷史樣本)
+├── retrieval_corpus.json # 檢索語料庫 (基於歷史樣本)
 ├── evaluation_set.json # 黃金評估測試集
 ├── embedding_index/ # FAISS 向量索引
 │
