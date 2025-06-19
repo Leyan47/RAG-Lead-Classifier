@@ -1,4 +1,4 @@
-## RAG-RealEstateNeedClassifierr (顧客需求萃取 by RAG LLM)
+## RAG-RealEstateNeedClassifierr (顧客文本-需求萃取 by RAG LLM)
 
 An intelligent multi-label classifier powered by Retrieval-Augmented Generation (RAG) to automatically analyze customer feedback from property viewings and tag their specific needs and preferences.
 
