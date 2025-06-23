@@ -36,11 +36,21 @@ def initialize_all():
 
     # 初始化向量檢索 (FAISS)
     embeddings_model = OllamaEmbeddings(model=models_config['embedding_model'])
-    vector_db = FAISS.load_local(
-        paths_config['embedding_index_path'],
-        embeddings_model,
-        allow_dangerous_deserialization=True
-    )
+    embedding_index_path = paths_config['embedding_index_path']
+    
+    if os.path.exists(embedding_index_path):
+        print(f"載入既有向量資料庫：{embedding_index_path}")
+        vector_db = FAISS.load_local(
+            embedding_index_path,
+            embeddings_model,
+            allow_dangerous_deserialization=True
+        )
+    else:
+        print(f"向量資料庫不存在，建立新的：{embedding_index_path}")
+        texts = [item["definition"] for item in retrieval_data]
+        metadatas = [{"label": item["label"]} for item in retrieval_data]
+        vector_db = FAISS.from_texts(texts=texts, embedding=embeddings_model, metadatas=metadatas)
+        vector_db.save_local(embedding_index_path)
 
     # 初始化關鍵詞檢索 (BM25)
     corpus = [item['definition'] for item in retrieval_data]
