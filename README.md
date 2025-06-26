@@ -35,6 +35,7 @@ An intelligent multi-label classifier powered by Retrieval-Augmented Generation 
 - **數據驗證**：使用 Pydantic 進行嚴格的請求/回應數據驗證，確保 API 的健壯性。
 - **啟動時加載**：所有耗時的模型和索引都在服務啟動時預先加載，確保請求能夠得到快速響應。
 
+![FastAPI](Fastapi_1.png)
 
 ## 專案結構 (Project Structure)
 ```
