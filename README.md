@@ -71,6 +71,7 @@ RAG-Lead-Classifier/
     ```
 
 2.  **創建並激活 Conda 環境** (推薦)
+    
     ```bash
     conda create --name rag-classifier python=3.10
     conda activate rag-classifier
@@ -78,10 +79,12 @@ RAG-Lead-Classifier/
 
 3.  **安裝依賴套件**
     *   若有 `requirements.txt` 文件，可使用 `pip` 安裝：
+      
         ```bash
         pip install -r requirements.txt
         ```
     *   或使用 `conda` 手動安裝核心依賴：
+      
         ```bash
         conda install pytorch sentence-transformers faiss-cpu -c pytorch
         conda install fastapi uvicorn pydantic email-validator python-dotenv rank_bm25 scikit-learn jieba -c conda-forge
@@ -91,6 +94,7 @@ RAG-Lead-Classifier/
 4.  **配置 API 金鑰**
     *   創建一個名為 `.env` 的文件。
     *   在 `.env` 文件中填入你的 `GOOGLE_API_KEY` 或 `GROQ_API_KEY` 等。
+    
         ```env
         GOOGLE_API_KEY="YOUR_GOOGLE_API_KEY"
         GROQ_API_KEY="YOUR_GROQ_API_KEY"
@@ -108,6 +112,7 @@ RAG-Lead-Classifier/
 在專案根目錄下，運行以下命令啟動 FastAPI 伺服器：
 ```bash
 python server.py
+```
 
 伺服器將在 http://127.0.0.1:8000 上運行。所有模型和索引將在啟動時預先加載。
 
