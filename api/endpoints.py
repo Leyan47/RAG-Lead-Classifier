@@ -7,7 +7,7 @@ from .schemas import ClassifyRequest, ClassifyResponse, HealthCheckResponse
 
 # 導入 RAG 核心函式和組件
 from config import APP_CONFIG
-from main import get_final_labels # 我們假設 main.py 裡有這個函式
+from main import get_final_labels
 
 # 這個全域變數用來緩存昂貴的組件
 # 避免每次請求都重新初始化
