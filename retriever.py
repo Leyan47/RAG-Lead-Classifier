@@ -1,6 +1,34 @@
 # retriever.py
 from text_utils import advanced_tokenize
 
+def reciprocal_rank_fusion(results_list: list, k: int = 60) -> dict:
+    """
+    執行 Reciprocal Rank Fusion 演算法。
+
+    Args:
+        results_list: 一個包含多個排序結果列表的列表。
+                      每個結果列表中的元素應為可哈希的，例如文檔的唯一 ID 或內容。
+        k: RRF 演算法中的常數。
+
+    Returns:
+        一個字典，鍵是文檔，值是它們的 RRF 分數。
+    """
+    ranked_scores = {}
+    
+    # 遍歷每一個檢索系統的結果列表 (例如 [bm25_results, vector_results])
+    for results in results_list:
+        # 遍歷該系統的每一個排序結果
+        for rank, doc in enumerate(results):
+            # doc 必須是可哈希的，這裡我們用 definition 作為唯一標識
+            doc_id = doc['definition']
+            if doc_id not in ranked_scores:
+                ranked_scores[doc_id] = 0
+            # 加上排名的倒數
+            ranked_scores[doc_id] += 1 / (k + rank + 1) # rank 從 0 開始，所以 +1
+            
+    return ranked_scores
+
+
 def hybrid_retrieve_and_rerank(
     query: str,
     components: dict,
@@ -8,8 +36,13 @@ def hybrid_retrieve_and_rerank(
     vector_k: int, 
     bm25_k: int, 
     final_k: int,
+    bm25_zero_score_ratio_threshold: float,
+    faiss_high_score_threshold: float,
+    faiss_high_score_ratio_threshold: float,
     verbose: bool
 ):
+    """執行 RRF 混合搜索、精排，並應用相關性閾值。"""
+
     if verbose:
         print("\n" + "="*20 + " Hybrid Search & Rerank Details (with RRF) " + "="*20)
         print(f"原始查詢: {query[:100]}...")
@@ -25,7 +58,16 @@ def hybrid_retrieve_and_rerank(
     tokenized_query = advanced_tokenize(query)
     bm25_scores = bm25.get_scores(tokenized_query)
     top_bm25_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:bm25_k]
-    # bm25_results 現在是完整的 item 列表
+
+    # BM25 提前退出檢查
+    top_bm25_scores = [bm25_scores[i] for i in top_bm25_indices]
+    zero_scores_count = sum(1 for score in top_bm25_scores if score == 0)
+    
+    if len(top_bm25_scores) > 0 and (zero_scores_count / len(top_bm25_scores)) >= bm25_zero_score_ratio_threshold:
+        if verbose:
+            print(f"\n[EARLY EXIT] BM25 召回結果中 {zero_scores_count}/{len(top_bm25_scores)} 的分數為 0，超過閾值 {bm25_zero_score_ratio_threshold:.0%}。查詢可能無關。")
+        return [] # 提前返回空列表
+
     bm25_results = [retrieval_data[i] for i in top_bm25_indices]
     
     if verbose:
@@ -33,9 +75,19 @@ def hybrid_retrieve_and_rerank(
         for i in top_bm25_indices[:10]:
             print(f"  - Score: {bm25_scores[i]:.4f} | Label: {retrieval_data[i]['label']}")
 
+    
+    
     # --- 2. 向量搜索 (FAISS) ---
     vector_docs_and_scores = vector_db.similarity_search_with_score(query, k=vector_k)
-    # vector_results 現在是完整的 item 列表
+
+    # FAISS 提前退出檢查
+    high_scores_count = sum(1 for doc, score in vector_docs_and_scores if score > faiss_high_score_threshold)
+
+    if len(vector_docs_and_scores) > 0 and (high_scores_count / len(vector_docs_and_scores)) >= faiss_high_score_ratio_threshold:
+        if verbose:
+            print(f"\n[EARLY EXIT] FAISS 召回結果中 {high_scores_count}/{len(vector_docs_and_scores)} 的 L2 距離大於 {faiss_high_score_threshold}，超過閾值 {faiss_high_score_ratio_threshold:.0%}。查詢可能無關。")
+        return [] # 提前返回空列表
+
     vector_results = [doc_content_to_item_map[doc.page_content] for doc, score in vector_docs_and_scores if doc.page_content in doc_content_to_item_map]
     
     if verbose:
@@ -43,16 +95,14 @@ def hybrid_retrieve_and_rerank(
         for doc, score in vector_docs_and_scores[:10]:
             print(f"  - Score (L2): {score:.4f} | Label: {doc.metadata.get('label', 'N/A')}")
 
-    # --- 3. 使用 RRF 合併排序結果 ---
-    # 將兩個檢索結果列表傳入 RRF 函式
-    fused_scores = reciprocal_rank_fusion([bm25_results, vector_results], k=60)
+
     
-    # 根據 RRF 分數對合併後的結果進行排序
+    # --- 3. 使用 RRF 合併排序結果 ---
+    # 將兩個檢索結果列表傳入 RRF 函式, 根據 RRF 分數對合併後的結果進行排序
+    fused_scores = reciprocal_rank_fusion([bm25_results, vector_results], k=60)
     sorted_fused_definitions = sorted(fused_scores.keys(), key=lambda x: fused_scores[x], reverse=True)
     
     # 將排序後的 definition 轉換回完整的 item 對象
-    # 注意：這裡的候選者數量可能多於 final_k，因為我們需要足夠的候選送入 re-ranker
-    # 我們可以取一個合理的數量，例如 vector_k + bm25_k
     num_candidates_for_rerank = vector_k + bm25_k
     final_candidates = [doc_content_to_item_map[definition] for definition in sorted_fused_definitions[:num_candidates_for_rerank]]
     
@@ -74,16 +124,28 @@ def hybrid_retrieve_and_rerank(
             # 所以我們遇到的第一個樣本就是該標籤的最佳代表。
             unique_label_candidates[label] = item
             
-    final_candidates = list(unique_label_candidates.values())
+    final_candidates = []
+    seen_labels = set()
     
-    # 這裡取一個合理的數量送入精排，例如前 20 個去重後的標籤
-    # 或者全部送入，取決於對速度和精度的權衡
+    # 遍歷經過 RRF 排序的 definition 列表
+    for definition in sorted_fused_definitions:
+        item = doc_content_to_item_map[definition]
+        label = item['label']
+        
+        # 如果這個標籤還沒見過
+        if label not in seen_labels:
+            # 將這個 item 加入我們的最終候選列表
+            final_candidates.append(item)
+            # 記錄下這個標籤，防止後續重複加入
+            seen_labels.add(label)
+
+    # 前 20 個去重後的標籤送入精排
     num_candidates_for_rerank = 20
     final_candidates = final_candidates[:num_candidates_for_rerank]
 
     if verbose:
-        print(f"\n--- Step 3.5: 標籤去重後，選取 Top {len(final_candidates)} 筆候選進入精排 ---")
-        for item in final_candidates[:5]:
+        print(f"\n--- Step 3.5: 標籤去重後，選取 {num_candidates_for_rerank} 筆候選進入精排 ---")
+        for item in final_candidates[:15]:
              print(f"  - Label: {item['label']} (來自 RRF 排序)")
 
 
@@ -98,11 +160,11 @@ def hybrid_retrieve_and_rerank(
     reranked_results = sorted(final_candidates, key=lambda x: x.get('rerank_score', -1), reverse=True)
     
     if verbose:
-        print(f"\n--- Step 4: Re-ranker 精排結果 (過濾前 Top {final_k}) ---")
+        print(f"\n--- Step 4: Re-ranker 精排結果 (前 Top {final_k}) ---")
         for item in reranked_results[:final_k]:
             print(f"  - Re-rank Score: {item['rerank_score']:.4f} | Label: {item['label']}")
 
-    # --- 5. 應用相關性閾值篩選 ---
+    # --- 5. 應用相關性閾值 ---
     thresholded_results = [doc for doc in reranked_results if doc['rerank_score'] >= rerank_score_threshold]
     
     # if verbose:
