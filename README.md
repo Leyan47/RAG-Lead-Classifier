@@ -15,7 +15,8 @@ An intelligent multi-label classifier powered by Retrieval-Augmented Generation 
 1.  **混合檢索 (Hybrid Retrieval)**：
     *   **語義檢索 (Semantic Search)**：使用 `FAISS` 向量資料庫和 `bge-large-zh-v1.5` Embedding 模型，理解用戶輸入的深層語義。
     *   **關鍵詞檢索 (Keyword Search)**：使用 `BM25` 演算法，精準匹配房地產領域的專業術語（如「邊間」、「機械車位」）。
-    *   此階段的目標是從包含數百個真實歷史樣本的語料庫中，高效召回一個高相關性的候選標籤列表。
+    *   此階段的目標是從包含數千個真實歷史樣本的語料庫中，高效召回一個高相關性的候選標籤列表。
+    *   若是客戶看房後的回饋 {BM25 score 過低} 或是 {Faiss L2 距離大於設定值} 的比例過大，則提前退出。
   
 2.  **融合排名 (Reciprocal Rank Fusion)**
     *   使用 RRF 將 FAISS 與 BM25 的候選清單進行排名融合，綜合不同檢索策略的優勢。
@@ -28,8 +29,10 @@ An intelligent multi-label classifier powered by Retrieval-Augmented Generation 
     *   此階段的目標是精準判斷查詢與每個候選樣本之間的真實相關性，並過濾掉分數低於預設閾值的無關選項。
 
 4.  **邏輯裁決 (LLM Adjudication)**：
-    *   將經過排序和過濾的候選標籤及其樣本，連同用戶的原始輸入，一同提交給大型語言模型（LLM，如 Gemini, Llama 3 等）。
-    *   通過精心設計的 Prompt，引導 LLM 進行最終的邏輯判斷（如處理否定語義、過濾矛盾選項），生成最終的標籤組合。
+    *   將經過排序和過濾的候選標籤及其樣本作為上下文，連同用戶的原始輸入，注入通過精心設計的 Prompt
+    *   引導LLM 進行最終的邏輯判斷並用 pydantic 規範輸出，生成最終的標籤組合。
+    *   有些如: 特定樓層、房數、坪數等偏好，透過第二階段的抽取獲得。
+    *   曾嘗試 Openai: gpt-4o, gpt-4.1, gpt-4.1-mini, gpt-4o-mini; Gemini: gemini-1.5-flash-latest, gemini-1.5-pro, gemini-2.5-flash, deepseek-reasoner, Llama 3 70b.
 
 
 ## API 服務 (API Service)
@@ -62,6 +65,12 @@ RAG-Lead-Classifier/
 ├── retriever.py # 核心檢索邏輯 (混合搜索 + Re-ranker)
 ├── main.py # 主程式入口，整合 RAG 流程
 └── evaluate.py # 性能評估腳本
+│
+├── prompts/ # prompts 管理
+│ ├── classification_prompt.txt # 第一層需求萃取
+│ ├── extraction_floor_preference.txt # 第二層需求(樓層)萃取
+│ ├── extraction_rooms.txt # 第二層需求(房數)萃取
+│ └── extraction_size.txt # 第二層需求(坪數)萃取
 │
 ├── api/ # API 相關模組
 │ ├── init.py
